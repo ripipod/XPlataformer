@@ -1,0 +1,10 @@
+# Level 1-2
+name: Level 1-2
+start: 50 400
+platform: 0 550 800 50
+platform: 120 470 100 20
+platform: 260 420 80 20
+platform: 420 360 120 20
+platform: 600 300 120 20
+killer: 300 550 350 550 325 520
+goal: 680 260 40 40

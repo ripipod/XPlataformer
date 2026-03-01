@@ -1,0 +1,14 @@
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.AssemblyInfoInputs.cache
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.AssemblyInfo.cs
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.csproj.CoreCompileInputs.cache
+C:\Users\pedro\Desktop\xplataform-v1.0B\bin\Release\net8.0-windows\XPlataformer.exe
+C:\Users\pedro\Desktop\xplataform-v1.0B\bin\Release\net8.0-windows\XPlataformer.deps.json
+C:\Users\pedro\Desktop\xplataform-v1.0B\bin\Release\net8.0-windows\XPlataformer.runtimeconfig.json
+C:\Users\pedro\Desktop\xplataform-v1.0B\bin\Release\net8.0-windows\XPlataformer.dll
+C:\Users\pedro\Desktop\xplataform-v1.0B\bin\Release\net8.0-windows\XPlataformer.pdb
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.dll
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\refint\XPlataformer.dll
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.pdb
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\XPlataformer.genruntimeconfig.cache
+C:\Users\pedro\Desktop\xplataform-v1.0B\obj\Release\net8.0-windows\ref\XPlataformer.dll
