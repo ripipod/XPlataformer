@@ -1,0 +1,13 @@
+name: Level 1-4
+start: 40 520
+platform: 0 550 800 50
+platform: 80 490 85 20
+platform: 180 450 95 20
+platform: 300 410 100 20
+platform: 440 360 110 20
+platform: 600 300 100 20
+killer: 140 550 190 550 165 520
+killer: 250 480 300 480 275 450
+killer: 380 420 430 420 405 390
+killer: 530 370 580 370 555 340
+goal: 720 260 40 40

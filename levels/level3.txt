@@ -1,0 +1,12 @@
+name: Level 1-3
+start: 50 500
+platform: 0 550 800 50
+platform: 100 480 90 20
+platform: 220 440 100 20
+platform: 360 380 110 20
+platform: 650 280 150 20
+movingplatform: 500 320 100 20 450 550 320 320 100
+killer: 200 550 250 550 225 520
+killer: 400 450 450 450 425 420
+killer: 600 350 650 350 625 320
+goal: 730 240 40 40
