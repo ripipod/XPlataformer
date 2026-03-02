@@ -3,7 +3,7 @@ A **2D Plataformer** made on Java with simple levels which can be edited! and ye
 
 # The real read me and explanation of what the fuck is this thing
 Ok, let's go to the point of this shit...
-XPlataformer is a VERY simple game (the whole engine is just 21KB!) of a cube that just goes on different levels. there's no objective or lore to this. i might add lore later, but not on beta. that's when i release the full game.
+XPlataformer is a VERY simple game (the whole engine is just 21KB! edit: now it is 78KB i think) of a cube that just goes on different levels. there's no objective or lore to this. i might add lore later, but not on beta. that's when i release the full game.
 
 # How do you play?
 just like normal. Space bar for jumping, A and D keys to move. and nothing anymore.
