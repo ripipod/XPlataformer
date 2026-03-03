@@ -1,0 +1,54 @@
+name: Level 1-10: Crimson Furnace (Adjusted)
+start: 40 500
+
+# floor and opener
+platform: 0 560 260 40
+platform: 110 500 90 20
+platform: 240 450 90 20
+movingplatform: 370 430 100 20 340 500 430 430 110
+platform: 540 390 100 20
+platform: 700 350 100 20
+
+# first hazard lane
+killer: 250 560 320 560 285 528
+killer: 330 560 400 560 365 528
+killer: 410 560 480 560 445 528
+
+# mid section (long and demanding but not impossible)
+platform: 860 320 110 20
+movingplatform: 1020 300 100 20 980 1160 300 300 95
+platform: 1220 270 100 20
+movingplatform: 1380 250 100 20 1340 1520 250 250 105
+platform: 1580 220 120 20
+platform: 1760 260 130 20
+movingplatform: 1960 300 110 20 1900 2100 300 300 100
+platform: 2160 260 130 20
+platform: 2360 230 120 20
+movingplatform: 2540 210 100 20 2480 2660 210 210 105
+
+# second hazard lane
+killer: 880 560 960 560 920 530
+killer: 1180 560 1260 560 1220 530
+killer: 1480 560 1560 560 1520 530
+killer: 1780 560 1860 560 1820 530
+
+# bridge into boss arena
+platform: 2760 260 130 20
+platform: 2960 300 130 20
+platform: 3140 360 150 20
+platform: 3340 420 150 20
+platform: 3520 500 170 20
+platform: 3700 560 850 40
+
+# boss arena supports
+platform: 3870 480 100 20
+platform: 4030 430 100 20
+platform: 4090 505 90 20
+platform: 4300 505 90 20
+checkpoint: 3950 510 46 46
+
+# final boss (red player-like + fire attacks)
+boss: 4200 360 44 62 5
+
+# objective after boss
+goal: 4480 500 40 40

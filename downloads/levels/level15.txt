@@ -1,0 +1,15 @@
+name: World 2 - Level 5
+start: 50 400
+platform: 0 550 1200 50
+platform: 600 520 80 20
+platform: 690 460 100 20
+platform: 780 400 120 20
+platform: 870 340 80 20
+platform: 960 520 100 20
+platform: 1050 460 120 20
+killer: 740 550 780 550 760 520
+killer: 880 550 920 550 900 520
+killer: 1020 550 1060 550 1040 520
+dragplatform: 780 260 120 20
+invisibleplatform: 980 320 100 15
+goal: 1430 260 40 40

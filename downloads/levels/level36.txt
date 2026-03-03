@@ -1,0 +1,15 @@
+name: World 4 - Level 6
+start: 50 400
+platform: 0 550 1200 50
+platform: 720 520 80 20
+platform: 810 460 100 20
+platform: 900 400 120 20
+platform: 990 340 80 20
+platform: 1080 520 100 20
+platform: 1170 460 120 20
+killer: 860 550 900 550 880 520
+killer: 1000 550 1040 550 1020 520
+killer: 1140 550 1180 550 1160 520
+dragplatform: 900 260 120 20
+invisibleplatform: 1100 320 100 15
+goal: 1550 260 40 40

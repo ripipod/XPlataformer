@@ -1,0 +1,13 @@
+name: World 1 - Level 1
+start: 50 400
+platform: 0 550 1200 50
+platform: 120 520 80 20
+platform: 210 460 100 20
+platform: 300 400 120 20
+platform: 390 340 80 20
+platform: 480 520 100 20
+platform: 570 460 120 20
+killer: 260 550 300 550 280 520
+killer: 400 550 440 550 420 520
+killer: 540 550 580 550 560 520
+goal: 950 260 40 40

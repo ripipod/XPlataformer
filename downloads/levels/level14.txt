@@ -1,0 +1,14 @@
+name: World 2 - Level 4
+start: 50 400
+platform: 0 550 1200 50
+platform: 480 520 80 20
+platform: 570 460 100 20
+platform: 660 400 120 20
+platform: 750 340 80 20
+platform: 840 520 100 20
+platform: 930 460 120 20
+killer: 620 550 660 550 640 520
+killer: 760 550 800 550 780 520
+killer: 900 550 940 550 920 520
+dragplatform: 660 260 120 20
+goal: 1310 260 40 40

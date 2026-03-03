@@ -1,0 +1,15 @@
+name: World 2 - Level 7
+start: 50 400
+platform: 0 550 1200 50
+platform: 840 520 80 20
+platform: 930 460 100 20
+platform: 1020 400 120 20
+platform: 1110 340 80 20
+platform: 1200 520 100 20
+platform: 1290 460 120 20
+killer: 980 550 1020 550 1000 520
+killer: 1120 550 1160 550 1140 520
+killer: 1260 550 1300 550 1280 520
+dragplatform: 1020 260 120 20
+invisibleplatform: 1220 320 100 15
+goal: 1670 260 40 40

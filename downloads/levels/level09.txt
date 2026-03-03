@@ -1,0 +1,14 @@
+name: World 1 - Level 9
+start: 50 400
+platform: 0 550 1200 50
+platform: 1080 520 80 20
+platform: 1170 460 100 20
+platform: 1260 400 120 20
+platform: 1350 340 80 20
+platform: 1440 520 100 20
+platform: 1530 460 120 20
+killer: 1220 550 1260 550 1240 520
+killer: 1360 550 1400 550 1380 520
+killer: 1500 550 1540 550 1520 520
+invisibleplatform: 1460 320 100 15
+goal: 1910 260 40 40

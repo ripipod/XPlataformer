@@ -17,7 +17,7 @@ import java.util.zip.ZipFile;
 
 public class Main {
     public static void main(String[] args) {
-        JFrame frame = new JFrame("XPlataformer RC1");
+        JFrame frame = new JFrame("XPlataformer");
             // try to load an `icon.png` from the project root and use it as the window icon
             try{
                 java.awt.Image icon = ImageIO.read(new File("icon.png"));
@@ -49,6 +49,7 @@ public class Main {
         // camera/scroll
         float cameraX = 0;
         float levelWidth = 1067;
+        int lavaKillY;
 
         ArrayList<Rectangle> platforms = new ArrayList<>();
         ArrayList<Polygon> killers = new ArrayList<>();
@@ -57,7 +58,13 @@ public class Main {
         ArrayList<Rectangle> invisiblePlatforms = new ArrayList<>();
         ArrayList<DraggablePlatform> dragPlatforms = new ArrayList<>();
         ArrayList<Boss> bosses = new ArrayList<>();
+        ArrayList<Fireball> fireballs = new ArrayList<>();
         Rectangle goal;
+        Rectangle checkpoint = null;
+        boolean checkpointActive = false;
+        int checkpointRespawnX = 0;
+        int checkpointRespawnY = 0;
+        int checkpointDeaths = 0;
         
         // game state
         enum GameState { MENU, PLAYING, DEMO }
@@ -84,10 +91,19 @@ public class Main {
         boolean debugMode = false;
         int debugModeTimer = 0;
         boolean iKeyPressed = false;
+        int debugSelectedLevel = 0;
+        Rectangle debugPanelBounds = new Rectangle(760, 80, 290, 420);
         // level management
         List<Level> levels = new ArrayList<>();
         int currentLevel = 0;
         int attemptCount = 1;
+        int playerMaxHp = 3;
+        int playerHp = 3;
+        int damageInvulnTimer = 0;
+        boolean respawnPending = false;
+        int explosionTimer = 0;
+        float explosionX = 0f, explosionY = 0f;
+        String pendingDeathReason = "";
         // debug: print a few frames after loading a level to inspect physics
         int debugFrames = 0;
         // in-game message when level completes
@@ -105,6 +121,7 @@ public class Main {
 
         public GamePanel(int w, int h){
             W = w; H = h;
+            lavaKillY = H + 80;
             setPreferredSize(new Dimension(W,H));
             setFocusable(true);
             addKeyListener(this);
@@ -165,7 +182,7 @@ public class Main {
                     File resourceDir = new File(resourceURL.toURI());
                     File[] files = resourceDir.listFiles((d,name)->name.endsWith(".txt")||name.endsWith(".lvl"));
                     if(files != null && files.length > 0){
-                        Arrays.sort(files, Comparator.comparing(File::getName));
+                        Arrays.sort(files, this::compareLevelFiles);
                         for(File f : files){
                             try{ levels.add(Level.loadFromFile(f)); }catch(Exception e){ System.err.println("Failed to load " + f + ": " + e); }
                         }
@@ -178,7 +195,7 @@ public class Main {
             String base = "levels" + File.separator;
             File dir = new File(base);
             if(!dir.exists() || !dir.isDirectory()){
-                // create default levels folder and files
+                // create default levels folder and files - note, THESE LEVELS ARE BROKEN!
                 dir.mkdirs();
                 createDefaultLevels(base);
             }
@@ -188,7 +205,7 @@ public class Main {
                 files = dir.listFiles((d,name)->name.endsWith(".txt")||name.endsWith(".lvl"));
             }
             if(files!=null){
-                Arrays.sort(files, Comparator.comparing(File::getName));
+                Arrays.sort(files, this::compareLevelFiles);
                 for(File f : files){
                     try{ levels.add(Level.loadFromFile(f)); }catch(Exception e){ System.err.println("Failed to load " + f + ": " + e); }
                 }
@@ -278,6 +295,7 @@ public class Main {
             Level L = levels.get(idx);
             platforms.clear(); killers.clear(); movingPlatforms.clear();
             invisiblePlatforms.clear(); dragPlatforms.clear(); bosses.clear();
+            fireballs.clear();
             platforms.addAll(L.platforms);
             killers.addAll(L.killers);
             movingPlatforms.addAll(L.movingPlatforms);
@@ -285,10 +303,17 @@ public class Main {
             dragPlatforms.addAll(L.dragPlatforms);
             bosses.addAll(L.bosses);
             goal = L.goal;
+            checkpoint = L.checkpoint;
+            checkpointActive = false;
+            checkpointDeaths = 0;
             player = new Rectangle(L.startX, L.startY, 32, 48);
             posX = player.x; posY = player.y;
             // reset motion state so player doesn't get moved away by leftover velocity
             vx = 0f; vy = 0f; onGround = false;
+            playerHp = playerMaxHp;
+            damageInvulnTimer = 0;
+            respawnPending = false;
+            explosionTimer = 0;
             cameraX = 0;
             
             // Calculate level width based on rightmost element (at least as wide as the viewport)
@@ -299,6 +324,8 @@ public class Main {
                 for(int x : xs) levelWidth = Math.max(levelWidth, x);
             }
             for(MovingPlatform mp : movingPlatforms) levelWidth = Math.max(levelWidth, (int)mp.maxX + mp.width);
+            for(Boss b : bosses) if(b != null && b.rect != null) levelWidth = Math.max(levelWidth, b.rect.x + b.rect.width);
+            if(checkpoint != null) levelWidth = Math.max(levelWidth, checkpoint.x + checkpoint.width);
             if(goal != null) levelWidth = Math.max(levelWidth, goal.x + goal.width);
             levelWidth += 50; // padding
             
@@ -346,6 +373,15 @@ public class Main {
             // update debug mode timer
             if(debugModeTimer > 0) debugModeTimer--;
             else debugMode = false;
+            if(damageInvulnTimer > 0) damageInvulnTimer--;
+            if(respawnPending){
+                explosionTimer--;
+                if(explosionTimer <= 0){
+                    respawnPlayer(pendingDeathReason.isEmpty() ? "You died!" : pendingDeathReason);
+                    pendingDeathReason = "";
+                }
+                return;
+            }
 
             // update moving platforms
             for(MovingPlatform mp : movingPlatforms) mp.update(dt);
@@ -371,7 +407,8 @@ public class Main {
 
             // update player rect from float positions
             player.x = Math.max(0, (int)posX);
-            if(player.x + player.width > W) player.x = W - player.width;
+            int maxPlayerX = Math.max(0, (int)levelWidth - player.width);
+            if(player.x > maxPlayerX) player.x = maxPlayerX;
             posX = player.x;
             player.y = (int)posY;
             
@@ -497,13 +534,18 @@ public class Main {
                 }
             }
 
+            // boss AI + fire attacks
+            updateBossesAndFire(dt);
+
             // boss interaction
             for(Boss b : bosses){
                 if(!b.alive) continue;
                 Rectangle br = b.rect;
                 if(player.intersects(br)){
                     Rectangle inter = player.intersection(br);
-                    boolean stompFromTop = (inter.height < inter.width) && (player.y < br.y) && vy > 0;
+                    boolean stompFromTop = b.tired
+                            && vy > 60f
+                            && (player.y + player.height) <= (br.y + Math.max(14, br.height / 2));
                     if(stompFromTop){
                         // damage boss and bounce
                         b.hp -= 1;
@@ -512,12 +554,13 @@ public class Main {
                         posY = player.y;
                         vy = -420f;
                         onGround = false;
+                        b.tired = false;
+                        b.tiredTimer = 0f;
+                        b.attackTimer = 1.8f;
+                        b.rect.y = b.homeY;
                     } else {
                         // player loses: respawn
-                        attemptCount++;
-                        Level L = levels.get(currentLevel);
-                        posX = L.startX; posY = L.startY; vy = 0; vx = 0;
-                        player.x = (int)posX; player.y = (int)posY;
+                        damagePlayer("Boss hit!");
                     }
                 }
             }
@@ -526,12 +569,40 @@ public class Main {
             for(Polygon t : killers){
                 if( containsAnyCorner(t, player) ){
                     // respawn
-                    attemptCount++;
-                    // respawn at level start
-                    Level L = levels.get(currentLevel);
-                    posX = L.startX; posY = L.startY; vy = 0; vx = 0;
-                    player.x = (int)posX; player.y = (int)posY;
+                    damagePlayer("You got spiked!");
                 }
+            }
+
+            // fireballs
+            for(int i = fireballs.size()-1; i >= 0; i--){
+                Fireball f = fireballs.get(i);
+                f.update(dt);
+                if(!f.alive){
+                    fireballs.remove(i);
+                    continue;
+                }
+                if(player.intersects(f.rect)){
+                    fireballs.remove(i);
+                    damagePlayer("BOOM! Fireball hit.");
+                    break;
+                }
+            }
+
+            // checkpoint activation
+            if(checkpoint != null && player.intersects(checkpoint) && !checkpointActive){
+                checkpointActive = true;
+                checkpointDeaths = 0;
+                checkpointRespawnX = checkpoint.x + Math.max(0, (checkpoint.width - player.width) / 2);
+                checkpointRespawnY = checkpoint.y - player.height;
+                showingMessage = true;
+                messageText = "Checkpoint reached!";
+                messageTimer = 60;
+            }
+
+            // void -> lava death
+            if(player.y > lavaKillY){
+                damagePlayer("You fell into lava!");
+                return;
             }
 
             // goal (require all bosses defeated if any exist)
@@ -571,6 +642,108 @@ public class Main {
             return true;
         }
 
+        void respawnPlayer(String reason){
+            attemptCount++;
+            Level L = levels.get(currentLevel);
+            int rx = L.startX;
+            int ry = L.startY;
+            if(checkpointActive){
+                checkpointDeaths++;
+                if(checkpointDeaths >= 10){
+                    checkpointActive = false;
+                    checkpointDeaths = 0;
+                    messageText = "Checkpoint lost (10 deaths). Return to start.";
+                    reason = messageText;
+                } else {
+                    rx = checkpointRespawnX;
+                    ry = checkpointRespawnY;
+                }
+            }
+            posX = rx; posY = ry; vy = 0; vx = 0;
+            player.x = (int)posX; player.y = (int)posY;
+            playerHp = playerMaxHp;
+            damageInvulnTimer = 20;
+            respawnPending = false;
+            showingMessage = true;
+            messageText = reason;
+            messageTimer = 45;
+            fireballs.clear();
+        }
+
+        void damagePlayer(String reason){
+            if(respawnPending) return;
+            if(damageInvulnTimer > 0) return;
+
+            playerHp = Math.max(0, playerHp - 1);
+            damageInvulnTimer = 26;
+
+            if(playerHp <= 0){
+                respawnPending = true;
+                explosionTimer = 26;
+                explosionX = player.x + player.width / 2f;
+                explosionY = player.y + player.height / 2f;
+                pendingDeathReason = reason;
+                fireballs.clear();
+                showingMessage = true;
+                messageText = "You exploded!";
+                messageTimer = 35;
+                return;
+            }
+
+            // small knock-up feedback on hit without instant death
+            vy = Math.min(vy, -220f);
+            showingMessage = true;
+            messageText = "HP: " + playerHp + "/" + playerMaxHp;
+            messageTimer = 25;
+        }
+
+        void updateBossesAndFire(float dt){
+            for(Boss b : bosses){
+                if(!b.alive) continue;
+
+                if(b.tired){
+                    b.rect.y = Math.min(b.tiredY, b.rect.y + Math.max(1, (int)(260f * dt)));
+                    b.tiredTimer -= dt;
+                    if(b.tiredTimer <= 0f){
+                        b.tired = false;
+                        b.attackTimer = 3.6f;
+                    }
+                    continue;
+                }
+
+                if(b.rect.y > b.homeY){
+                    b.rect.y = Math.max(b.homeY, b.rect.y - Math.max(1, (int)(220f * dt)));
+                }
+
+                b.attackTimer -= dt;
+                b.fireTimer -= dt;
+
+                // boss periodically goes tired and can be stomped
+                if(b.attackTimer <= 0f){
+                    b.tired = true;
+                    b.tiredTimer = 2.2f;
+                    b.fireTimer = 0f;
+                    continue;
+                }
+
+                if(b.fireTimer <= 0f){
+                    float px = player.x + player.width / 2f;
+                    float py = player.y + player.height / 2f;
+                    float bx = b.rect.x + b.rect.width / 2f;
+                    float by = b.rect.y + b.rect.height / 2f;
+                    float dx = px - bx;
+                    float dy = py - by;
+                    float len = (float)Math.sqrt(dx*dx + dy*dy);
+                    if(len < 0.0001f) len = 1f;
+                    float speed = 280f;
+                    float vxF = (dx / len) * speed;
+                    float vyF = (dy / len) * speed;
+                    fireballs.add(new Fireball((int)bx - 6, (int)by - 6, 12, 12, vxF, vyF));
+                    b.fireTimer = 1.15f;
+                }
+            }
+        }
+
         void recomputeMouseLevels(){
             mouseLevels.clear();
             for(int i = 0; i < levels.size(); i++){
@@ -579,6 +752,24 @@ public class Main {
                     mouseLevels.add(i);
                 }
             }
+        }
+
+        int compareLevelFiles(File a, File b){
+            int na = extractLevelNumber(a.getName());
+            int nb = extractLevelNumber(b.getName());
+            if(na != nb) return Integer.compare(na, nb);
+            return a.getName().compareToIgnoreCase(b.getName());
+        }
+
+        int extractLevelNumber(String name){
+            StringBuilder sb = new StringBuilder();
+            for(int i = 0; i < name.length(); i++){
+                char c = name.charAt(i);
+                if(Character.isDigit(c)) sb.append(c);
+            }
+            if(sb.length() == 0) return Integer.MAX_VALUE;
+            try{ return Integer.parseInt(sb.toString()); }
+            catch(NumberFormatException ex){ return Integer.MAX_VALUE; }
         }
 
         @Override
@@ -715,6 +906,11 @@ public class Main {
 
             // Apply camera transform
             g2.translate(-cameraX, 0);
+
+            // boss-fight backdrop (castle pillars) behind gameplay geometry
+            if(!bosses.isEmpty()){
+                drawBossCastleBackdrop(g2);
+            }
             
             // platforms (fixed)
             for(Rectangle p : platforms) drawSkeuoPlatform(g2, p, false);
@@ -728,14 +924,24 @@ public class Main {
             // killers
             for(Polygon t : killers) drawSkeuoKiller(g2, t);
 
+            // lava band (void kill zone hint)
+            drawLava(g2);
+
             // bosses
             for(Boss b : bosses) if(b.alive) drawBoss(g2, b);
+            for(Fireball f : fireballs) drawFireball(g2, f);
+            if(checkpoint != null) drawCheckpoint(g2, checkpoint, checkpointActive);
 
             // goal
             drawSkeuoGoal(g2, goal);
 
             // player
-            drawSkeuoPlayer(g2, player);
+            if(!respawnPending){
+                drawSkeuoPlayer(g2, player);
+            }
+            if(explosionTimer > 0){
+                drawExplosion(g2, explosionX, explosionY, explosionTimer);
+            }
             
             // Reset camera transform
             g2.translate(cameraX, 0);
@@ -743,7 +949,7 @@ public class Main {
             // HUD (no camera transform)
             int hudPad = 10;
             int hudWidth = 360;
-            int hudHeight = 70;
+            int hudHeight = 88;
             Shape hudPanel = new RoundRectangle2D.Float(hudPad, hudPad, hudWidth, hudHeight, 18, 18);
 
             g2.setColor(new Color(0,0,0,140));
@@ -765,6 +971,7 @@ public class Main {
             String lvlName = levels.size() > 0 ? levels.get(currentLevel).name : "-";
             g2.drawString("Level: " + lvlName, hudPad + 12, hudPad + 40);
             g2.drawString("Attempt: " + attemptCount, hudPad + 12, hudPad + 58);
+            g2.drawString("HP: " + playerHp + "/" + playerMaxHp, hudPad + 12, hudPad + 76);
             // show message if set
             if(showingMessage){
                 g2.setFont(g2.getFont().deriveFont(Font.BOLD, 18f));
@@ -785,28 +992,72 @@ public class Main {
                 g2.setColor(new Color(40, 30, 20));
                 g2.drawString(messageText, mx, my-4);
             }
+
+            // boss HUD when near
+            Boss nearBoss = getNearestAliveBoss(520f);
+            if(nearBoss != null){
+                drawBossHud(g2, nearBoss);
+            }
             
             // debug mode display
             if(debugMode){
-                int baseY = H - 70;
-                g2.setFont(g2.getFont().deriveFont(Font.BOLD, 18f));
-                g2.setColor(Color.YELLOW);
-                g2.drawString("DEBUG MODE: Press a number (1-9) to jump to level", 10, baseY);
-                g2.setFont(g2.getFont().deriveFont(Font.PLAIN, 14f));
-                g2.setColor(new Color(230, 230, 180));
-                g2.drawString("Total levels: " + levels.size(), 10, baseY + 18);
-
-                if(!mouseLevels.isEmpty()){
-                    StringBuilder sb = new StringBuilder("Mouse levels (drag platforms): ");
-                    for(int i = 0; i < mouseLevels.size(); i++){
-                        int idx = mouseLevels.get(i);
-                        String name = (idx >= 0 && idx < levels.size()) ? levels.get(idx).name : "?";
-                        if(i > 0) sb.append(" | ");
-                        sb.append(idx + 1).append(": ").append(name);
-                    }
-                    g2.drawString(sb.toString(), 10, baseY + 36);
-                }
+                drawDebugSelector(g2);
             }
+        }
+
+        private void drawDebugSelector(Graphics2D g2){
+            int x = debugPanelBounds.x;
+            int y = debugPanelBounds.y;
+            int w = debugPanelBounds.width;
+            int h = debugPanelBounds.height;
+            Shape panel = new RoundRectangle2D.Float(x, y, w, h, 14, 14);
+            g2.setColor(new Color(0,0,0,170));
+            g2.fill(new RoundRectangle2D.Float(x+2, y+4, w, h, 14, 14));
+            g2.setPaint(new GradientPaint(x, y, new Color(68, 74, 88, 240), x, y+h, new Color(35, 40, 50, 240)));
+            g2.fill(panel);
+            g2.setColor(new Color(20, 20, 26, 230));
+            g2.draw(panel);
+
+            g2.setFont(new Font("SansSerif", Font.BOLD, 14));
+            g2.setColor(new Color(245, 245, 210));
+            g2.drawString("Debug Level Selector", x + 12, y + 22);
+            g2.setFont(new Font("SansSerif", Font.PLAIN, 12));
+            g2.setColor(new Color(220, 226, 235));
+            g2.drawString("UP/DOWN: select | ENTER: load | I+E: close", x + 12, y + 38);
+
+            int startY = y + 56;
+            int rowH = 18;
+            int visible = Math.min(18, levels.size());
+            int startIndex = 0;
+            if(debugSelectedLevel >= visible) startIndex = debugSelectedLevel - visible + 1;
+            for(int i = 0; i < visible; i++){
+                int idx = startIndex + i;
+                if(idx >= levels.size()) break;
+                int ry = startY + i*rowH;
+                if(idx == debugSelectedLevel){
+                    g2.setPaint(new GradientPaint(x+10, ry-12, new Color(255, 235, 160, 230), x+10, ry+4, new Color(210, 165, 65, 230)));
+                    g2.fill(new RoundRectangle2D.Float(x + 8, ry - 12, w - 16, 16, 8, 8));
+                }
+                String nm = levels.get(idx).name == null ? "" : levels.get(idx).name;
+                String text = (idx + 1) + ". " + nm;
+                g2.setColor(new Color(30, 24, 20, 220));
+                g2.drawString(trimDebugText(g2, text, w - 28), x + 14, ry);
+            }
+        }
+
+        private String trimDebugText(Graphics2D g2, String text, int maxWidth){
+            FontMetrics fm = g2.getFontMetrics();
+            if(fm.stringWidth(text) <= maxWidth) return text;
+            String dots = "...";
+            int lim = maxWidth - fm.stringWidth(dots);
+            if(lim <= 0) return dots;
+            StringBuilder sb = new StringBuilder();
+            for(int i=0;i<text.length();i++){
+                char c = text.charAt(i);
+                if(fm.stringWidth(sb.toString() + c) > lim) break;
+                sb.append(c);
+            }
+            return sb.append(dots).toString();
         }
 
         private void drawSkeuoButton(Graphics2D g2, Rectangle bounds, String text, boolean hover, boolean selected){
@@ -927,6 +1178,77 @@ public class Main {
             g2.drawPolygon(t);
         }
 
+        private void drawLava(Graphics2D g2){
+            int lavaTop = H - 8;
+            int width = (int)Math.max(levelWidth + 200, W + 200);
+            int x = -100;
+            g2.setPaint(new GradientPaint(
+                    x, lavaTop, new Color(255, 170, 40, 220),
+                    x, lavaTop + 28, new Color(185, 20, 0, 235)));
+            g2.fillRect(x, lavaTop, width, 28);
+            g2.setColor(new Color(255, 240, 140, 180));
+            for(int i = x; i < x + width; i += 26){
+                g2.drawArc(i, lavaTop - 7, 20, 10, 0, 180);
+            }
+        }
+
+        private void drawBossCastleBackdrop(Graphics2D g2){
+            if(bosses.isEmpty()) return;
+            Boss ref = null;
+            for(Boss b : bosses){
+                if(b != null){ ref = b; break; }
+            }
+            if(ref == null) return;
+
+            int arenaCenterX = ref.rect.x + ref.rect.width / 2;
+            int wallX = arenaCenterX - 420;
+            int wallY = 130;
+            int wallW = 840;
+            int wallH = 430;
+
+            // distant wall plate
+            g2.setPaint(new GradientPaint(
+                    wallX, wallY, new Color(85, 84, 92, 140),
+                    wallX, wallY + wallH, new Color(30, 30, 40, 180)));
+            g2.fillRoundRect(wallX, wallY, wallW, wallH, 20, 20);
+            g2.setColor(new Color(15, 15, 20, 160));
+            g2.drawRoundRect(wallX, wallY, wallW, wallH, 20, 20);
+
+            // simple stone brick lines (cheap effect)
+            g2.setColor(new Color(120, 120, 130, 45));
+            for(int y = wallY + 26; y < wallY + wallH - 10; y += 24){
+                g2.drawLine(wallX + 12, y, wallX + wallW - 12, y);
+            }
+            for(int x = wallX + 24; x < wallX + wallW - 10; x += 48){
+                g2.drawLine(x, wallY + 14, x, wallY + wallH - 14);
+            }
+
+            // pillars around the boss arena
+            int baseY = 560;
+            int[] px = new int[]{
+                    arenaCenterX - 340, arenaCenterX - 220, arenaCenterX - 90,
+                    arenaCenterX + 90, arenaCenterX + 220, arenaCenterX + 340
+            };
+            for(int cx : px){
+                int pw = 34;
+                int py = 180;
+                int ph = baseY - py;
+                g2.setPaint(new GradientPaint(
+                        cx - pw/2, py, new Color(165, 160, 150, 170),
+                        cx + pw/2, py + ph, new Color(80, 75, 70, 190)));
+                g2.fillRoundRect(cx - pw/2, py, pw, ph, 8, 8);
+                g2.setColor(new Color(45, 40, 38, 200));
+                g2.drawRoundRect(cx - pw/2, py, pw, ph, 8, 8);
+
+                // cap + base
+                g2.setPaint(new GradientPaint(
+                        cx - 28, py - 12, new Color(190, 185, 170, 170),
+                        cx - 28, py + 2, new Color(90, 86, 78, 190)));
+                g2.fillRoundRect(cx - 28, py - 12, 56, 14, 6, 6);
+                g2.fillRoundRect(cx - 30, baseY - 8, 60, 12, 6, 6);
+            }
+        }
+
         private void drawSkeuoGoal(Graphics2D g2, Rectangle goal){
             int x = goal.x;
             int y = goal.y;
@@ -969,43 +1291,125 @@ public class Main {
             int w = r.width;
             int h = r.height;
 
-            Shape body = new RoundRectangle2D.Float(x, y, w, h, 24, 24);
+            // red variant of the player look
+            Shape body = new RoundRectangle2D.Float(x, y, w, h, 12, 12);
             g2.setPaint(new GradientPaint(
-                    x, y, new Color(200, 90, 60),
-                    x, y+h, new Color(80, 0, 0)));
+                    x, y, new Color(255, 130, 130),
+                    x, y+h, new Color(150, 20, 30)));
             g2.fill(body);
 
-            g2.setColor(new Color(20, 0, 0));
-            g2.setStroke(new BasicStroke(3.0f));
+            g2.setColor(new Color(70, 0, 10));
+            g2.setStroke(new BasicStroke(2.2f));
             g2.draw(body);
 
-            // eyes
-            int eyeW = Math.max(6, w / 8);
-            int eyeH = Math.max(6, h / 6);
-            g2.setColor(new Color(255, 240, 220));
-            g2.fillOval(x + w/4 - eyeW/2, y + h/3 - eyeH/2, eyeW, eyeH);
-            g2.fillOval(x + 3*w/4 - eyeW/2, y + h/3 - eyeH/2, eyeW, eyeH);
-            g2.setColor(new Color(80, 0, 0));
-            g2.drawOval(x + w/4 - eyeW/2, y + h/3 - eyeH/2, eyeW, eyeH);
-            g2.drawOval(x + 3*w/4 - eyeW/2, y + h/3 - eyeH/2, eyeW, eyeH);
+            int visorH = Math.max(8, h / 4);
+            Shape visor = new RoundRectangle2D.Float(x + w*0.18f, y + h*0.18f, w*0.64f, visorH, visorH, visorH);
+            g2.setPaint(new GradientPaint(
+                    x, y, new Color(255, 235, 235, 220),
+                    x, y+visorH, new Color(220, 140, 140, 220)));
+            g2.fill(visor);
 
-            // health bar above
-            int barW = w;
-            int barH = 8;
-            int bx = x;
-            int by = y - barH - 4;
-            float hpRatio = Math.max(0f, Math.min(1f, b.hp / 5f));
+            // tired state: flatten to floor and show hint
+            if(b.tired){
+                g2.setColor(new Color(255, 240, 130));
+                g2.setFont(new Font("SansSerif", Font.BOLD, 12));
+                g2.drawString("TIRED", x + 6, y - 8);
+            }
+
+        }
+
+        private void drawFireball(Graphics2D g2, Fireball f){
+            int x = f.rect.x, y = f.rect.y, s = f.rect.width;
+            RadialGradientPaint glow = new RadialGradientPaint(
+                    new Point2D.Float(x + s/2f, y + s/2f),
+                    s * 1.8f,
+                    new float[]{0f, 1f},
+                    new Color[]{new Color(255, 230, 110, 220), new Color(255, 80, 10, 0)});
+            g2.setPaint(glow);
+            g2.fill(new Ellipse2D.Float(x - s, y - s, s*3, s*3));
+            g2.setPaint(new GradientPaint(x, y, new Color(255, 245, 160), x, y+s, new Color(255, 60, 10)));
+            g2.fillOval(x, y, s, s);
+            g2.setColor(new Color(120, 20, 0, 220));
+            g2.drawOval(x, y, s, s);
+        }
+
+        private void drawExplosion(Graphics2D g2, float cx, float cy, int timer){
+            float t = Math.max(0f, Math.min(1f, timer / 26f));
+            float rOuter = 54f * (1f - t) + 14f;
+            float rInner = rOuter * 0.58f;
+
+            RadialGradientPaint outer = new RadialGradientPaint(
+                    new Point2D.Float(cx, cy),
+                    rOuter,
+                    new float[]{0f, 1f},
+                    new Color[]{new Color(255, 230, 120, 230), new Color(255, 70, 0, 0)});
+            g2.setPaint(outer);
+            g2.fill(new Ellipse2D.Float(cx - rOuter, cy - rOuter, rOuter * 2f, rOuter * 2f));
+
+            g2.setPaint(new GradientPaint(
+                    cx, cy - rInner, new Color(255, 250, 180, 240),
+                    cx, cy + rInner, new Color(255, 110, 20, 235)));
+            g2.fill(new Ellipse2D.Float(cx - rInner, cy - rInner, rInner * 2f, rInner * 2f));
+        }
+
+        private void drawCheckpoint(Graphics2D g2, Rectangle cp, boolean active){
+            int x = cp.x, y = cp.y, w = cp.width, h = cp.height;
+            g2.setPaint(new GradientPaint(
+                    x, y, active ? new Color(120, 240, 170) : new Color(180, 180, 180),
+                    x, y+h, active ? new Color(40, 130, 90) : new Color(90, 90, 90)));
+            g2.fillRoundRect(x, y, w, h, 8, 8);
+            g2.setColor(new Color(20, 25, 20, 220));
+            g2.drawRoundRect(x, y, w, h, 8, 8);
+
+            // small flag
+            int poleX = x + w/2;
+            g2.setColor(new Color(230, 230, 235));
+            g2.fillRect(poleX-1, y-22, 3, 24);
+            Polygon flag = new Polygon(
+                    new int[]{poleX+1, poleX+15, poleX+1},
+                    new int[]{y-20, y-15, y-10},
+                    3);
+            g2.setColor(active ? new Color(80, 245, 160) : new Color(220, 220, 220));
+            g2.fillPolygon(flag);
+        }
+
+        private Boss getNearestAliveBoss(float maxDistance){
+            if(player == null) return null;
+            float px = player.x + player.width / 2f;
+            float py = player.y + player.height / 2f;
+            Boss nearest = null;
+            float bestD2 = maxDistance * maxDistance;
+            for(Boss b : bosses){
+                if(b == null || !b.alive || b.rect == null) continue;
+                float bx = b.rect.x + b.rect.width / 2f;
+                float by = b.rect.y + b.rect.height / 2f;
+                float dx = bx - px;
+                float dy = by - py;
+                float d2 = dx*dx + dy*dy;
+                if(d2 <= bestD2){
+                    bestD2 = d2;
+                    nearest = b;
+                }
+            }
+            return nearest;
+        }
+
+        private void drawBossHud(Graphics2D g2, Boss b){
+            int bw = 260;
+            int bh = 18;
+            int bx = (W - bw) / 2;
+            int by = 14;
+            float hpRatio = Math.max(0f, Math.min(1f, b.hp / (float)b.maxHp));
 
             g2.setColor(new Color(0, 0, 0, 170));
-            g2.fillRoundRect(bx-1, by-1, barW+2, barH+2, 6, 6);
-            g2.setColor(new Color(80, 20, 20));
-            g2.drawRoundRect(bx-1, by-1, barW+2, barH+2, 6, 6);
-
-            int fillW = (int)(barW * hpRatio);
-            g2.setPaint(new GradientPaint(
-                    bx, by, new Color(255, 110, 90),
-                    bx, by+barH, new Color(180, 20, 20)));
-            g2.fillRoundRect(bx, by, fillW, barH, 4, 4);
+            g2.fillRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+            g2.setColor(new Color(85, 30, 25, 230));
+            g2.drawRoundRect(bx - 2, by - 2, bw + 4, bh + 4, 10, 10);
+            g2.setPaint(new GradientPaint(bx, by, new Color(255, 120, 100), bx, by + bh, new Color(170, 22, 22)));
+            g2.fillRoundRect(bx, by, (int)(bw * hpRatio), bh, 8, 8);
+            g2.setColor(new Color(245, 230, 220));
+            g2.setFont(new Font("SansSerif", Font.BOLD, 12));
+            g2.drawString("BOSS", bx + 6, by + 13);
         }
 
         private void drawSkeuoPlayer(Graphics2D g2, Rectangle r){
@@ -1061,7 +1465,8 @@ public class Main {
             }
 
             player.x = Math.max(0, (int)posX);
-            if(player.x + player.width > W) player.x = W - player.width;
+            int maxPlayerX = Math.max(0, (int)levelWidth - player.width);
+            if(player.x > maxPlayerX) player.x = maxPlayerX;
             posX = player.x;
             player.y = (int)posY;
             
@@ -1132,6 +1537,13 @@ public class Main {
                 }
             }
 
+            if(player.y > lavaKillY){
+                attemptCount++;
+                Level L = levels.get(currentLevel);
+                posX = L.startX; posY = L.startY; vy = 0; vx = 0;
+                player.x = (int)posX; player.y = (int)posY;
+            }
+
             if(player.intersects(goal) && allBossesDefeated()){
                 int next = currentLevel + 1;
                 if(next >= levels.size()) next = 0;
@@ -1188,6 +1600,24 @@ public class Main {
                 return;
             }
             
+            if(debugMode){
+                switch(e.getKeyCode()){
+                    case KeyEvent.VK_UP:
+                        debugSelectedLevel = Math.max(0, debugSelectedLevel - 1);
+                        return;
+                    case KeyEvent.VK_DOWN:
+                        debugSelectedLevel = Math.min(Math.max(0, levels.size()-1), debugSelectedLevel + 1);
+                        return;
+                    case KeyEvent.VK_ENTER:
+                        if(!levels.isEmpty()){
+                            loadLevel(debugSelectedLevel);
+                            debugMode = false;
+                            debugModeTimer = 0;
+                        }
+                        return;
+                }
+            }
+
             // gameplay controls
             switch(e.getKeyCode()){
                 case KeyEvent.VK_LEFT:
@@ -1219,7 +1649,15 @@ public class Main {
                 case KeyEvent.VK_I:
                     iKeyPressed = true; break;
                 case KeyEvent.VK_E:
-                    if(iKeyPressed){ debugMode = true; debugModeTimer = 300; } // ~5 seconds
+                    if(iKeyPressed){
+                        debugMode = !debugMode;
+                        if(debugMode){
+                            debugModeTimer = Integer.MAX_VALUE / 4;
+                            debugSelectedLevel = Math.max(0, Math.min(debugSelectedLevel, levels.size()-1));
+                        } else {
+                            debugModeTimer = 0;
+                        }
+                    }
                     break;
                 case KeyEvent.VK_0:
                 case KeyEvent.VK_1:
@@ -1266,7 +1704,7 @@ public class Main {
             
             File[] files = directory.listFiles((d,name)->name.endsWith(".txt")||name.endsWith(".lvl"));
             if(files != null){
-                Arrays.sort(files, Comparator.comparing(File::getName));
+                Arrays.sort(files, this::compareLevelFiles);
                 for(File f : files){
                     try{ 
                         levels.add(Level.loadFromFile(f));
@@ -1337,10 +1775,48 @@ public class Main {
         static class Boss {
             Rectangle rect;
             int hp;
+            int maxHp;
             boolean alive = true;
+            boolean tired = false;
+            float tiredTimer = 0f;
+            float attackTimer = 3.6f;
+            float fireTimer = 1.0f;
+            int homeY;
+            int tiredY;
             Boss(int x, int y, int w, int h, int hp){
                 this.rect = new Rectangle(x, y, w, h);
                 this.hp = Math.max(1, hp);
+                this.maxHp = this.hp;
+                this.homeY = y;
+                this.tiredY = y + 70;
+            }
+        }
+
+        static class Fireball {
+            Rectangle rect;
+            float x, y, vx, vy;
+            float spawnX, spawnY;
+            float maxTravel = 520f;
+            boolean alive = true;
+            Fireball(int x, int y, int w, int h, float vx, float vy){
+                this.rect = new Rectangle(x, y, w, h);
+                this.x = x; this.y = y;
+                this.spawnX = x; this.spawnY = y;
+                this.vx = vx; this.vy = vy;
+            }
+            void update(float dt){
+                x += vx * dt;
+                y += vy * dt;
+                rect.x = (int)x; rect.y = (int)y;
+                float dx = x - spawnX;
+                float dy = y - spawnY;
+                if((dx*dx + dy*dy) > (maxTravel * maxTravel)){
+                    alive = false;
+                    return;
+                }
+                if(rect.x < -80 || rect.y < -80 || rect.x > 5000 || rect.y > 2000){
+                    alive = false;
+                }
             }
         }
 
@@ -1354,6 +1830,7 @@ public class Main {
             ArrayList<DraggablePlatform> dragPlatforms = new ArrayList<>();
             ArrayList<Boss> bosses = new ArrayList<>();
             Rectangle goal = new Rectangle(720,210,40,40);
+            Rectangle checkpoint = null;
 
             static Level defaultLevel1(){
                 Level L = new Level(); L.name = "Level 1-1";
@@ -1446,6 +1923,10 @@ public class Main {
                                 String[] s = data.split("\\s+");
                                 L.goal = new Rectangle(Integer.parseInt(s[0]),Integer.parseInt(s[1]),Integer.parseInt(s[2]),Integer.parseInt(s[3]));
                             } break;
+                            case "checkpoint": {
+                                String[] s = data.split("\\s+");
+                                L.checkpoint = new Rectangle(Integer.parseInt(s[0]),Integer.parseInt(s[1]),Integer.parseInt(s[2]),Integer.parseInt(s[3]));
+                            } break;
                         }
                     }
                 }
@@ -1516,6 +1997,10 @@ public class Main {
                                 String[] s = data.split("\\s+");
                                 L.goal = new Rectangle(Integer.parseInt(s[0]),Integer.parseInt(s[1]),Integer.parseInt(s[2]),Integer.parseInt(s[3]));
                             } break;
+                            case "checkpoint": {
+                                String[] s = data.split("\\s+");
+                                L.checkpoint = new Rectangle(Integer.parseInt(s[0]),Integer.parseInt(s[1]),Integer.parseInt(s[2]),Integer.parseInt(s[3]));
+                            } break;
                         }
                     }
                 }
@@ -1554,6 +2039,27 @@ public class Main {
                     });
                 }
             } else if(gameState == GameState.PLAYING){
+                if(debugMode && debugPanelBounds.contains(lx, ly)){
+                    int rowH = 18;
+                    int listY = debugPanelBounds.y + 56;
+                    if(ly >= listY){
+                        int clicked = (ly - listY) / rowH;
+                        int visible = Math.min(18, levels.size());
+                        int startIndex = 0;
+                        if(debugSelectedLevel >= visible) startIndex = debugSelectedLevel - visible + 1;
+                        int idx = startIndex + clicked;
+                        if(idx >= 0 && idx < levels.size()){
+                            if(idx == debugSelectedLevel){
+                                loadLevel(debugSelectedLevel);
+                                debugMode = false;
+                                debugModeTimer = 0;
+                            } else {
+                                debugSelectedLevel = idx;
+                            }
+                            return;
+                        }
+                    }
+                }
                 // start dragging any cursor-movable platform under the cursor
                 for(DraggablePlatform dp : dragPlatforms){
                     if(dp.rect.contains(lx, ly)){
@@ -1578,6 +2084,7 @@ public class Main {
                 }
             }
         }
+        // 86 lines before this... we hit 2000 whole lines of code! awesome!
         
         @Override public void mouseClicked(MouseEvent e){}
         @Override public void mouseReleased(MouseEvent e){
@@ -1643,3 +2150,4 @@ public class Main {
         }
     }
 }
+// this is some big code over here!

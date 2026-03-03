@@ -1,0 +1,14 @@
+name: World 4 - Level 3
+start: 50 400
+platform: 0 550 1200 50
+platform: 360 520 80 20
+platform: 450 460 100 20
+platform: 540 400 120 20
+platform: 630 340 80 20
+platform: 720 520 100 20
+platform: 810 460 120 20
+killer: 500 550 540 550 520 520
+killer: 640 550 680 550 660 520
+killer: 780 550 820 550 800 520
+dragplatform: 540 260 120 20
+goal: 1190 260 40 40
